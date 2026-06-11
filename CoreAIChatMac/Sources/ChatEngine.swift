@@ -98,6 +98,15 @@ final class ChatEngine: ObservableObject {
         engine = nil
         tokenizer = nil
 
+        // Zoo "decode" bundles trace input_ids as static [1,1]: every prefill
+        // step must be a single token. The engine reads this env var at
+        // creation; official dynamic bundles get the default back.
+        if entry.name.contains("_decode_") {
+            setenv("COREAI_CHUNK_THRESHOLD", "1", 1)
+        } else {
+            unsetenv("COREAI_CHUNK_THRESHOLD")
+        }
+
         Task {
             do {
                 let bundle = try LanguageBundle(from: entry.url.path)

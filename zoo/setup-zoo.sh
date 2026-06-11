@@ -12,11 +12,12 @@ APPLE_PIN=b1cb71b   # apple/coreai-models revision the patches are verified agai
 ZOO_PIN=f941494     # john-rocky/coreai-model-zoo revision the patches come from
 ZOO_RAW="https://raw.githubusercontent.com/john-rocky/coreai-model-zoo/${ZOO_PIN}/apps"
 CLONE=zoo-coreai-models
+# Order matters: per-token-inputs / static-inputs apply on top of extra-states.
 PATCHES=(
   coreai-shared-product
+  coreai-pipelined-extra-states
   coreai-pipelined-per-token-inputs
   coreai-pipelined-static-inputs
-  coreai-pipelined-extra-states
 )
 
 if [ ! -d "$CLONE" ]; then

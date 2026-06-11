@@ -38,18 +38,20 @@ M4 Max reference numbers: gpt-oss-20b decodes ~78 tok/s, loads in ~2 s warm.
 
 ## Zoo mode (community models)
 
-Many [zoo](https://github.com/john-rocky/coreai-model-zoo) bundles (Qwen3.5, LFM2.5,
-Granite int8 builds) ride the stock engine and work with the default build — just
-point the app at a downloaded bundle.
-
-Some zoo models need the zoo's engine patches (per-token inputs, static input
-buffers, extra states — Apple's repo takes no PRs, so they ship as patch files).
-Opt in with:
+The [zoo](https://github.com/john-rocky/coreai-model-zoo)'s LLM bundles (Qwen3.5,
+LFM2.5, Granite) are SSM/GDN hybrids carrying extra recurrent state — the stock
+runtime stops at "Expected 2 states (KV cache), got 4". The zoo ships engine
+patches for exactly this (Apple's repo takes no PRs, so they're patch files).
+One-time setup:
 
 ```bash
-./zoo/setup-zoo.sh    # clones apple/coreai-models locally, applies zoo patches,
-                      # regenerates the app against the patched checkout
+./zoo/setup-zoo.sh                 # clone apple/coreai-models locally + apply zoo patches
+# then build with the zoo project: open the regenerated CoreAIChatMac.xcodeproj
 ```
+
+After that, **use the in-app "Get Models" button** to download zoo bundles straight
+from Hugging Face (same atomic downloader as the zoo's iOS apps) — or point the app
+at any bundle folder.
 
 Multi-part zoo models (e.g. Gemma 4 PLE/table variants) need model-specific app
 logic and live in the zoo's own apps instead.

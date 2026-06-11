@@ -2,3 +2,4 @@ build/
 *.xcodeproj
 zoo-coreai-models/
 .DS_Store
+build-zoo/
