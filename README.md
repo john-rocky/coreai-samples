@@ -19,6 +19,10 @@ recipe-level knowledge: [zoo knowledge base](https://github.com/john-rocky/corea
 
 ## Quick start (CoreAIChatMac + gpt-oss-20b)
 
+> No big-RAM Mac for the export? Pre-converted official bundles (hash-stamped,
+> measured) are on HF: [mlboydaisuke/*-CoreAI-official](https://huggingface.co/mlboydaisuke)
+> — download one and skip to step 2.
+
 ```bash
 # 1. Export a model with Apple's official recipe
 git clone https://github.com/apple/coreai-models && cd coreai-models
