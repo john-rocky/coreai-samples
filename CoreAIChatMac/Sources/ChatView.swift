@@ -22,25 +22,12 @@ struct ChatView: View {
         .toolbar {
             ToolbarItem {
                 Button {
-                    showZooSheet = true
-                } label: {
-                    Label("Get Models", systemImage: "arrow.down.circle")
-                }
-                .help("Download community zoo models from Hugging Face")
-            }
-            ToolbarItem {
-                Button {
                     engine.newChat()
                 } label: {
                     Label("New Chat", systemImage: "square.and.pencil")
                 }
                 .disabled(engine.selectedModel == nil)
                 .help("Clear the conversation (keeps the loaded model)")
-            }
-        }
-        .sheet(isPresented: $showZooSheet) {
-            ZooDownloadSheet(modelsFolder: resolvedModelsFolder) {
-                engine.scanFolder(resolvedModelsFolder)
             }
         }
         .onAppear {
@@ -72,20 +59,6 @@ struct ChatView: View {
     }
 
     @State private var autoPromptSent = false
-    @State private var showZooSheet = false
-
-    // Downloads land in the chosen models folder, or ~/CoreAIModels by default
-    // (created on demand and adopted as the scan folder).
-    private var resolvedModelsFolder: URL {
-        if !modelsFolderPath.isEmpty {
-            return URL(fileURLWithPath: modelsFolderPath)
-        }
-        let fallback = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("CoreAIModels")
-        try? FileManager.default.createDirectory(at: fallback, withIntermediateDirectories: true)
-        DispatchQueue.main.async { modelsFolderPath = fallback.path }
-        return fallback
-    }
 
     // Renders a clean share-card PNG of the conversation + stats via
     // ImageRenderer (no screen-recording permission needed). Demo/docs hook,

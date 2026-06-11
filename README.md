@@ -4,10 +4,9 @@
 (the Core ML successor, WWDC 2026, macOS/iOS 27) — the runnable examples the official
 repo doesn't ship.
 
-Every app builds against the **unmodified official runtime** out of the box. Models
-come from Apple's official export recipes — or from the
-[community model zoo](https://github.com/john-rocky/coreai-model-zoo) (most zoo
-bundles run as-is; see [Zoo mode](#zoo-mode-community-models) for the rest).
+Design rule: **one simple app per group of models that share the same handling**,
+built against the **unmodified official runtime** — so you can read the code and
+lift it straight into your own app. Models come from Apple's official export recipes.
 
 | Sample | Platform | What it shows |
 |---|---|---|
@@ -36,25 +35,13 @@ open CoreAIChatMac.xcodeproj                        # Run (scheme is Release)
 
 M4 Max reference numbers: gpt-oss-20b decodes ~78 tok/s, loads in ~2 s warm.
 
-## Zoo mode (community models)
+## Community zoo models?
 
-The [zoo](https://github.com/john-rocky/coreai-model-zoo)'s LLM bundles (Qwen3.5,
-LFM2.5, Granite) are SSM/GDN hybrids carrying extra recurrent state — the stock
-runtime stops at "Expected 2 states (KV cache), got 4". The zoo ships engine
-patches for exactly this (Apple's repo takes no PRs, so they're patch files).
-One-time setup:
-
-```bash
-./zoo/setup-zoo.sh                 # clone apple/coreai-models locally + apply zoo patches
-# then build with the zoo project: open the regenerated CoreAIChatMac.xcodeproj
-```
-
-After that, **use the in-app "Get Models" button** to download zoo bundles straight
-from Hugging Face (same atomic downloader as the zoo's iOS apps) — or point the app
-at any bundle folder.
-
-Multi-part zoo models (e.g. Gemma 4 PLE/table variants) need model-specific app
-logic and live in the zoo's own apps instead.
+The [community zoo](https://github.com/john-rocky/coreai-model-zoo)'s bundles
+(Qwen3.5, LFM2.5, Granite, Gemma 4) use extended engine features and run in the
+**zoo's own apps**, which ship ready-patched — that's the place where zoo models
+just work, with in-app Hugging Face downloads. This repo stays plain-official so
+the code stays copy-paste-able into your app.
 
 ## License
 
