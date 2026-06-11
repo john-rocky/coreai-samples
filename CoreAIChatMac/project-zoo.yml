@@ -1,0 +1,45 @@
+name: CoreAIChatMac
+options:
+  bundleIdPrefix: com.coreai
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "27.0"
+
+packages:
+  coreai-models:
+    path: ../zoo-coreai-models
+
+
+# Run config Release: the engine's per-token host work is ~3x slower unoptimized.
+schemes:
+  CoreAIChatMac:
+    build:
+      targets:
+        CoreAIChatMac: all
+    run:
+      config: Release
+
+targets:
+  CoreAIChatMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: Sources
+    dependencies:
+      - package: coreai-models
+        product: CoreAILM
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coreai.chatmac
+        DEVELOPMENT_TEAM: MFN25KNUGJ
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_NSMainStoryboardFile: ""
+        ENABLE_APP_SANDBOX: "NO"
+        ENABLE_HARDENED_RUNTIME: "NO"
+        SWIFT_APPROACHABLE_CONCURRENCY: "YES"

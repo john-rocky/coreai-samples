@@ -1,0 +1,4 @@
+build/
+*.xcodeproj
+zoo-coreai-models/
+.DS_Store
