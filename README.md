@@ -11,6 +11,7 @@ lift it straight into your own app. Models come from Apple's official export rec
 | Sample | Platform | What it shows |
 |---|---|---|
 | [CoreAIChatMac](CoreAIChatMac/) | macOS | Chat with any exported LLM bundle — streaming, live load/TTFT/tok-s stats, gpt-oss "thinking" parsing |
+| [CoreAIDecisionFormMac](CoreAIDecisionFormMac/) | macOS | Copy an email → a support ticket form fills at once: eight typed decisions (choice / score / yes-no) from one read of the email, clef-flash 9B |
 | CLIPPhotoSearch | iOS | *(design stage — [memo](CLIPPhotoSearch-DESIGN.md))* on-device photo semantic search on the ANE |
 
 Measured performance for everything here:
@@ -46,6 +47,10 @@ The [community zoo](https://github.com/john-rocky/coreai-model-zoo)'s bundles
 **zoo's own apps**, which ship ready-patched — that's the place where zoo models
 just work, with in-app Hugging Face downloads. This repo stays plain-official so
 the code stays copy-paste-able into your app.
+
+The exception is clef-flash: its zoo host (`ClefFlash`, vendored in
+[CoreAIDecisionFormMac](CoreAIDecisionFormMac/)) runs on the unmodified runtime
+with no engine patch, so its app lives here.
 
 ## License
 

@@ -1,0 +1,44 @@
+name: CoreAIDecisionFormMac
+options:
+  bundleIdPrefix: com.coreai
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "27.0"
+
+# ClefFlash = the zoo's Swift host for clef-flash, vendored as a local package (see ClefFlash/Package.swift).
+packages:
+  ClefFlash:
+    path: ClefFlash
+
+# Run config Release: the timings in the README are Release numbers.
+schemes:
+  CoreAIDecisionFormMac:
+    build:
+      targets:
+        CoreAIDecisionFormMac: all
+    run:
+      config: Release
+
+targets:
+  CoreAIDecisionFormMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: Sources
+    dependencies:
+      - package: ClefFlash
+        product: ClefFlash
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coreai.decisionformmac
+        DEVELOPMENT_TEAM: MFN25KNUGJ
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_NSMainStoryboardFile: ""
+        ENABLE_APP_SANDBOX: "NO"
+        ENABLE_HARDENED_RUNTIME: "NO"
