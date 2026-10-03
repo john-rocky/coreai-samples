@@ -96,7 +96,7 @@ struct DecisionFormView: View {
         case .loading(let since):
             TimelineView(.periodic(from: since, by: 1)) { context in
                 notice("Loading clef-flash… \(Int(context.date.timeIntervalSince(since))) s",
-                       "The first load prepares the model for this Mac: about a minute, and about 30 GB of cache. Later loads read that cache.")
+                       "The first load prepares the model for this Mac and writes about 30 GB of cache. Later loads read that cache.")
             }
         case .warming:
             notice("Warming up…", "One decision on a short text, so the first real one runs at full speed.")
