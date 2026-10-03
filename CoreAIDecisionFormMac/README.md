@@ -81,8 +81,8 @@ the downloaded folder (the one holding `gpu-pipelined/` and `host/`).
 
 - Mac only. The fp16 decoder alone is 15.9 GB; an iPhone app gets about 6.4 GB.
 - The first load specializes the `.aimodel` files for this Mac and writes about 30 GB to
-  `~/Library/Caches/coreai-cache/`. That took about 80 s for the zoo's CLI on an M4 Max Mac Studio, measured
-  once while the GPU was shared with other work; the app's own first load was not timed on an idle GPU.
+  `~/Library/Caches/coreai-cache/`. The model zoo's CLI measured that first specialization on an idle M4 Max
+  Mac Studio: 56.1 s, then 4.5 s from the cache (the model card's JIT row); the app's own first load was not timed.
   Later loads read that cache. The app then runs one decision on a short text, because the first decision of a
   process is slow.
 - The sample email with the eight questions is 934 tokens, 809 of them the questions and their options; the
