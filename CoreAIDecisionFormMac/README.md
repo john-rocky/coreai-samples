@@ -5,6 +5,8 @@ mood, next step, needed-by date and three yes/no flags. Each field is one questi
 model reads the email once and returns a probability for every option of every question; nothing is
 generated.
 
+[Watch the 13 s clip](https://github.com/john-rocky/coreai-assets/blob/main/demos/clef-flash-mac.mp4): the sample email fills the form on an M4 Max Mac Studio ([how it was recorded](https://github.com/john-rocky/coreai-assets/tree/main/demos#clef-flash-macmp4-13-s)).
+
 The model is [Cloudflare/clef-flash](https://huggingface.co/Cloudflare/clef-flash) (Qwen3.5-9B with a joint
 schema head, Apache-2.0), converted to Core AI:
 [mlboydaisuke/clef-flash-CoreAI](https://huggingface.co/mlboydaisuke/clef-flash-CoreAI). The host code is the
