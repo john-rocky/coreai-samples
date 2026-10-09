@@ -1,0 +1,48 @@
+name: CoreAISearchiOS
+options:
+  bundleIdPrefix: com.coreai
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "27.0"
+
+# Hub = swift-transformers' Hugging Face downloader (the same package CoreAIImageGenMac uses).
+# Core AI itself is an SDK framework: no package.
+packages:
+  swift-transformers:
+    url: https://github.com/huggingface/swift-transformers
+    from: "1.1.0"
+
+# Run config Release: the timings in the README are Release numbers.
+schemes:
+  CoreAISearchiOS:
+    build:
+      targets:
+        CoreAISearchiOS: all
+    run:
+      config: Release
+
+targets:
+  CoreAISearchiOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: Sources
+      - path: Resources
+        buildPhase: resources
+    dependencies:
+      - package: swift-transformers
+        product: Hub
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coreai.searchios
+        DEVELOPMENT_TEAM: MFN25KNUGJ
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: Core AI Search
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        TARGETED_DEVICE_FAMILY: "1"
