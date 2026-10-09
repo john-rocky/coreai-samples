@@ -49,9 +49,10 @@ The [community zoo](https://github.com/john-rocky/coreai-model-zoo)'s bundles
 just work, with in-app Hugging Face downloads. This repo stays plain-official so
 the code stays copy-paste-able into your app.
 
-The exception is clef-flash: its zoo host (`ClefFlash`, vendored in
-[CoreAIDecisionFormMac](CoreAIDecisionFormMac/)) runs on the unmodified runtime
-with no engine patch, so its app lives here.
+Two zoo models are the exception, because they run on the unmodified runtime with no
+engine patch, so their apps live here: clef-flash (its zoo host `ClefFlash`, vendored in
+[CoreAIDecisionFormMac](CoreAIDecisionFormMac/)) and Granite-Embedding-97M (a plain
+`.aimodel` called through `AIModel.run` in [CoreAISearchiOS](CoreAISearchiOS/)).
 
 ## License
 
