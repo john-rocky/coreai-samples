@@ -1,0 +1,52 @@
+name: CoreAIImageGenMac
+options:
+  bundleIdPrefix: com.coreai
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "27.0"
+
+# coreai-models is pinned to the commit this app was built and measured against
+# (apple/coreai-models main on 2026-10-09); its Swift API still changes between commits.
+# Hub = swift-transformers' Hugging Face downloader.
+packages:
+  coreai-models:
+    url: https://github.com/apple/coreai-models
+    revision: 97a14be40bb1c5b95badb08b8532530443d62d26
+  swift-transformers:
+    url: https://github.com/huggingface/swift-transformers
+    from: "1.1.0"
+
+# Run config Release: the timings in the README are Release numbers.
+schemes:
+  CoreAIImageGenMac:
+    build:
+      targets:
+        CoreAIImageGenMac: all
+    run:
+      config: Release
+
+targets:
+  CoreAIImageGenMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: Sources
+    dependencies:
+      - package: coreai-models
+        product: CoreAIDiffusion
+      - package: swift-transformers
+        product: Hub
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coreai.imagegenmac
+        DEVELOPMENT_TEAM: MFN25KNUGJ
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: Core AI Image Gen
+        ENABLE_APP_SANDBOX: "NO"
+        ENABLE_HARDENED_RUNTIME: "NO"
+        SWIFT_APPROACHABLE_CONCURRENCY: "YES"
