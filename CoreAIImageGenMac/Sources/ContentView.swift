@@ -33,8 +33,15 @@ struct ContentView: View {
     // MARK: - Controls
 
     @ViewBuilder private var modelControls: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(engine.modelName ?? ModelFiles.title).font(.headline)
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Model", selection: $engine.selectedID) {
+                ForEach(ModelFiles.catalog) { model in
+                    Text(model.title).tag(model.id)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            .disabled(engine.status.isBusy)
             Text(modelSource)
                 .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         }
@@ -50,12 +57,13 @@ struct ContentView: View {
         statusLine
     }
 
-    /// Where the model comes from: the Hugging Face repo, or the folder picked with Local….
+    /// Where the model comes from: the Hugging Face folder, or the folder picked with Local….
     private var modelSource: String {
-        if let folder = engine.modelFolder, folder.standardizedFileURL != ModelFiles.root.standardizedFileURL {
+        let model = engine.selected
+        if let folder = engine.modelFolder, folder.standardizedFileURL != model.root.standardizedFileURL {
             return "Folder: \(folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))"
         }
-        return "Hugging Face: \(ModelFiles.repo), \(gigabytes(ModelFiles.totalBytes)) GB"
+        return "Hugging Face: \(model.repo)/\(model.folder), \(gigabytes(model.totalBytes)) GB"
     }
 
     private var promptField: some View {
@@ -196,7 +204,7 @@ struct ContentView: View {
     private var placeholderText: String {
         switch engine.status {
         case .idle:
-            "Press Download & Load to get the model (\(gigabytes(ModelFiles.totalBytes)) GB, once), or Local… to open a bundle you exported."
+            "Press Download & Load to get the model (\(gigabytes(engine.selected.totalBytes)) GB, once), or Local… to open a bundle you exported."
         case .downloading:
             "Downloading the model from Hugging Face. It stays on this Mac; later launches skip the download."
         case .loading:

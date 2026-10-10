@@ -10,6 +10,7 @@ import Foundation
 ///
 /// - `-autoplay 1`: press Download & Load (once more if the download fails), wait until the model is
 ///   ready, then generate.
+/// - `-model fp16|int8`: pick that model before Download & Load (default: the first one).
 /// - `-hubEndpoint <url>`: download from this host instead of https://huggingface.co.
 /// - `-local <folder>`: press Local… with this folder instead of Download & Load.
 /// - `-downloadOnly 1`: stop after the download, before the load.
@@ -28,6 +29,7 @@ enum LaunchOptions {
     private static var defaults: UserDefaults { .standard }
     static var autoplay: Bool { defaults.bool(forKey: "autoplay") }
     static var log: Bool { defaults.bool(forKey: "log") }
+    static var model: String? { defaults.string(forKey: "model") }
     static var hubEndpoint: String? { defaults.string(forKey: "hubEndpoint") }
     static var local: String? { defaults.string(forKey: "local") }
     static var downloadOnly: Bool { defaults.bool(forKey: "downloadOnly") }
@@ -70,6 +72,13 @@ enum Telemetry {
 
 /// Every measured number of one launch; written as JSON when a hands-off run ends.
 struct RunReport: Codable {
+    /// The Hugging Face bundle of the last Download & Load.
+    struct Hub: Codable {
+        var id: String
+        var repo: String
+        var revision: String
+        var folder: String
+    }
     struct Download: Codable {
         var seconds: Double
         var bytes_downloaded: Int64
@@ -120,8 +129,7 @@ struct RunReport: Codable {
     var os_build = RunReport.sysctl("kern.osversion")
     var architecture = AIModel.deviceArchitectureName
     var physical_memory_gb = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
-    var repo = ModelFiles.repo
-    var revision = ModelFiles.revision
+    var hub: Hub?
     var compute = "Core AI, GPU preferred (the pipeline's SpecializationOptions); per-operation placement not observed"
     var arguments = Array(ProcessInfo.processInfo.arguments.dropFirst())
     var thermal_at_launch = RunReport.thermal()
@@ -209,6 +217,14 @@ enum Autoplay {
         var status = "DONE"
         do {
             try await pause()
+            if let id = LaunchOptions.model {
+                guard ModelFiles.catalog.contains(where: { $0.id == id }) else {
+                    throw ImageGenError("-model \(id) is not one of: \(ModelFiles.catalog.map(\.id).joined(separator: ", "))")
+                }
+                Telemetry.line("PICK model=\(id)")
+                engine.selectedID = id
+                try await pause()
+            }
             if let path = LaunchOptions.local {
                 Telemetry.line("TAP Local… folder=\(path)")
                 engine.loadLocal(URL(filePath: (path as NSString).expandingTildeInPath))

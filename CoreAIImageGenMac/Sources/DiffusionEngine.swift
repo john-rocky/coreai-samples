@@ -1,4 +1,4 @@
-// DiffusionEngine — downloads the FLUX.2 klein 4B Core AI bundle from the Hugging Face Hub, loads
+// DiffusionEngine — downloads a FLUX.2 klein 4B Core AI bundle from the Hugging Face Hub, loads
 // it with Apple's official CoreAIDiffusionPipeline (`FlowTransformerPipeline`) and turns a prompt
 // into an image. Every button in ContentView calls a method here; the hands-off runs in
 // Autoplay.swift call the same methods.
@@ -10,47 +10,32 @@ import Hub
 import ImageIO
 import UniformTypeIdentifiers
 
-/// The bundle this app downloads, pinned to one revision of the Hugging Face repo.
-///
-/// A community export made with apple/coreai-models' own recipe
-/// (`coreai.diffusion.export flux2-klein-4b --platform macOS`): its transformer takes RoPE
-/// position ids, which is what `FlowTransformerPipeline` passes at the coreai-models commit
-/// pinned in project.yml.
-enum ModelFiles {
-    static let repo = "dushandz/FLUX.2-klein-4B-CoreAI"
-    static let revision = "a7f65cdd6b2c8e2616dab3887efd0ae6ce983e44"
-    static let title = "FLUX.2 klein 4B"
-
+/// One bundle this app can download: a folder of a Hugging Face repo, pinned to one revision.
+struct ModelFiles: Identifiable {
+    /// Short name, also the value of `-model` in hands-off runs.
+    let id: String
+    let title: String
+    let repo: String
+    let revision: String
+    /// The folder of the repo that holds the bundle.
+    let folder: String
     /// What text-to-image at 1024×1024 needs, with each file's size at `revision`, in download
-    /// order. The repo's VAE encoders (image-to-image) and half-size VAEs are left out.
-    static let files: [(path: String, bytes: Int64)] = [
-        ("metadata.json", 1_010),
-        ("tokenizer/chat_template.jinja", 4_168),
-        ("tokenizer/config.json", 375),
-        ("tokenizer/tokenizer.json", 11_422_650),
-        ("tokenizer/tokenizer_config.json", 375),
-        ("vae_bn_mean.npy", 640),
-        ("vae_bn_var.npy", 640),
-        ("VAEDecoder.aimodel/main.hash", 32),
-        ("VAEDecoder.aimodel/metadata.json", 395),
-        ("VAEDecoder.aimodel/main.mlirb", 99_294_661),
-        ("TextEncoder.aimodel/main.hash", 32),
-        ("TextEncoder.aimodel/metadata.json", 396),
-        ("TextEncoder.aimodel/main.mlirb", 1_752_686_429),
-        ("Transformer.aimodel/main.hash", 32),
-        ("Transformer.aimodel/metadata.json", 396),
-        ("Transformer.aimodel/main.mlirb", 2_181_887_897),
-    ]
-    static let totalBytes = files.reduce(0) { $0 + $1.bytes }
+    /// order. The folder's VAE encoders (image-to-image) and half-size VAEs are left out.
+    let files: [(path: String, bytes: Int64)]
+
+    var totalBytes: Int64 { files.reduce(0) { $0 + $1.bytes } }
 
     /// The files can be downloaded again, so they live in Caches.
     static let downloadBase = URL.cachesDirectory.appending(path: "CoreAIImageGenMac/huggingface")
-    static var root: URL { HubApi(downloadBase: downloadBase).localRepoLocation(HubApi.Repo(id: repo)) }
+    /// The bundle folder on disk, the one the pipeline opens.
+    var root: URL {
+        HubApi(downloadBase: Self.downloadBase).localRepoLocation(HubApi.Repo(id: repo)).appending(path: folder)
+    }
 
-    static var isOnDisk: Bool { files.allSatisfy { size(of: $0.path) == $0.bytes } }
-    static var bytesOnDisk: Int64 { files.reduce(0) { $0 + min(size(of: $1.path) ?? 0, $1.bytes) } }
+    var isOnDisk: Bool { files.allSatisfy { size(of: $0.path) == $0.bytes } }
+    var bytesOnDisk: Int64 { files.reduce(0) { $0 + min(size(of: $1.path) ?? 0, $1.bytes) } }
 
-    private static func size(of path: String) -> Int64? {
+    private func size(of path: String) -> Int64? {
         (try? FileManager.default.attributesOfItem(atPath: root.appending(path: path).path)[.size] as? NSNumber)?.int64Value
     }
 
@@ -58,15 +43,15 @@ enum ModelFiles {
     /// a time, so a failed download keeps the files that finished and the next try fetches only
     /// the rest. `endpoint` replaces https://huggingface.co (nil = the default). `progress` gets
     /// the bytes done so far.
-    static func download(endpoint: String?, progress: @escaping @Sendable (Int64) -> Void) async throws {
+    func download(endpoint: String?, progress: @escaping @Sendable (Int64) -> Void) async throws {
         // cache: nil = one copy of each file, in downloadBase (no second copy in the Hub cache).
         // useOfflineMode: false = no network gives the network's own error, not a missing-file one.
-        let hub = HubApi(downloadBase: downloadBase, cache: nil, endpoint: endpoint, useOfflineMode: false)
+        let hub = HubApi(downloadBase: Self.downloadBase, cache: nil, endpoint: endpoint, useOfflineMode: false)
         var done: Int64 = 0
         for file in files {
             if size(of: file.path) != file.bytes {
                 let before = done
-                try await hub.snapshot(from: HubApi.Repo(id: repo), revision: revision, matching: [file.path]) { @Sendable fraction in
+                try await hub.snapshot(from: HubApi.Repo(id: repo), revision: revision, matching: ["\(folder)/\(file.path)"]) { @Sendable fraction in
                     progress(before + Int64(fraction.fractionCompleted * Double(file.bytes)))
                 }
                 try Task.checkCancellation()
@@ -78,6 +63,57 @@ enum ModelFiles {
             progress(done)
         }
     }
+}
+
+extension ModelFiles {
+    /// The two folders of mlboydaisuke/FLUX.2-klein-4B-CoreAI, both exported with the
+    /// apple/coreai-models commit that project.yml pins. The first is the default.
+    static let catalog: [ModelFiles] = [
+        ModelFiles(
+            id: "fp16", title: "FLUX.2 klein 4B (fp16, 14.1 GB)",
+            repo: "mlboydaisuke/FLUX.2-klein-4B-CoreAI",
+            revision: "039db98cbf1247680ea5e76048f87b3ce061e6d6", folder: "macos-fp16",
+            files: [
+                ("metadata.json", 974),
+                ("tokenizer/chat_template.jinja", 4_168),
+                ("tokenizer/config.json", 375),
+                ("tokenizer/tokenizer.json", 11_422_650),
+                ("tokenizer/tokenizer_config.json", 375),
+                ("vae_bn_mean.npy", 640),
+                ("vae_bn_var.npy", 640),
+                ("VAEDecoder.aimodel/main.hash", 32),
+                ("VAEDecoder.aimodel/metadata.json", 395),
+                ("VAEDecoder.aimodel/main.mlirb", 99_294_680),
+                ("TextEncoder.aimodel/main.hash", 32),
+                ("TextEncoder.aimodel/metadata.json", 396),
+                ("TextEncoder.aimodel/main.mlirb", 6_228_947_553),
+                ("Transformer.aimodel/main.hash", 32),
+                ("Transformer.aimodel/metadata.json", 396),
+                ("Transformer.aimodel/main.mlirb", 7_751_312_967),
+            ]),
+        ModelFiles(
+            id: "int8", title: "FLUX.2 klein 4B (int8, 7.5 GB)",
+            repo: "mlboydaisuke/FLUX.2-klein-4B-CoreAI",
+            revision: "039db98cbf1247680ea5e76048f87b3ce061e6d6", folder: "macos-int8",
+            files: [
+                ("metadata.json", 1_549),
+                ("tokenizer/chat_template.jinja", 4_168),
+                ("tokenizer/config.json", 375),
+                ("tokenizer/tokenizer.json", 11_422_650),
+                ("tokenizer/tokenizer_config.json", 375),
+                ("vae_bn_mean.npy", 640),
+                ("vae_bn_var.npy", 640),
+                ("VAEDecoder.aimodel/main.hash", 32),
+                ("VAEDecoder.aimodel/metadata.json", 395),
+                ("VAEDecoder.aimodel/main.mlirb", 99_294_687),
+                ("TextEncoder.aimodel/main.hash", 32),
+                ("TextEncoder.aimodel/metadata.json", 396),
+                ("TextEncoder.aimodel/main.mlirb", 3_309_658_432),
+                ("Transformer.aimodel/main.hash", 32),
+                ("Transformer.aimodel/metadata.json", 396),
+                ("Transformer.aimodel/main.mlirb", 4_119_647_410),
+            ]),
+    ]
 }
 
 struct ImageGenError: LocalizedError {
@@ -146,6 +182,11 @@ final class DiffusionEngine: ObservableObject {
     }
 
     @Published private(set) var status: Status = .idle
+    /// The bundle Download & Load fetches. Picking another one drops the loaded model.
+    @Published var selectedID = ModelFiles.catalog[0].id {
+        didSet { if selectedID != oldValue { unload() } }
+    }
+    var selected: ModelFiles { ModelFiles.catalog.first { $0.id == selectedID } ?? ModelFiles.catalog[0] }
     /// What is loaded: the model's title, or the folder name for Local….
     @Published private(set) var modelName: String?
     /// The bundle folder that is loaded.
@@ -176,30 +217,32 @@ final class DiffusionEngine: ObservableObject {
     func downloadAndLoad(loadAfterDownload: Bool = true) {
         guard !status.isBusy else { return }
         clearResult()
-        if ModelFiles.isOnDisk {
-            Telemetry.line("DOWNLOAD skipped: all \(ModelFiles.files.count) files on disk (\(ModelFiles.totalBytes) bytes)")
-            if loadAfterDownload { startLoad(ModelFiles.root, name: ModelFiles.title) }
+        let model = selected
+        report.hub = .init(id: model.id, repo: model.repo, revision: model.revision, folder: model.folder)
+        if model.isOnDisk {
+            Telemetry.line("DOWNLOAD skipped: all \(model.files.count) files of \(model.id) on disk (\(model.totalBytes) bytes)")
+            if loadAfterDownload { startLoad(model.root, name: model.title) }
             return
         }
         let endpoint = LaunchOptions.hubEndpoint
-        let before = ModelFiles.bytesOnDisk
+        let before = model.bytesOnDisk
         let start = ContinuousClock.now
-        setStatus(.downloading(done: before, total: ModelFiles.totalBytes))
-        Telemetry.line("DOWNLOAD start repo=\(ModelFiles.repo) revision=\(ModelFiles.revision) endpoint=\(endpoint ?? "default") on_disk=\(before) total=\(ModelFiles.totalBytes)")
+        setStatus(.downloading(done: before, total: model.totalBytes))
+        Telemetry.line("DOWNLOAD start model=\(model.id) repo=\(model.repo) revision=\(model.revision) folder=\(model.folder) endpoint=\(endpoint ?? "default") on_disk=\(before) total=\(model.totalBytes)")
         work = Task {
             let activity = Self.beginWork("Downloading and loading the model")
             defer { ProcessInfo.processInfo.endActivity(activity) }
             do {
-                try await ModelFiles.download(endpoint: endpoint) { bytes in
+                try await model.download(endpoint: endpoint) { bytes in
                     Task { @MainActor in self.showDownload(bytes) }
                 }
                 let seconds = start.duration(to: .now).seconds
-                let onDisk = ModelFiles.bytesOnDisk
+                let onDisk = model.bytesOnDisk
                 report.download = .init(seconds: seconds, bytes_downloaded: onDisk - before, bytes_on_disk: onDisk,
-                                        expected_bytes: ModelFiles.totalBytes, endpoint: endpoint ?? "default")
+                                        expected_bytes: model.totalBytes, endpoint: endpoint ?? "default")
                 Telemetry.line("DOWNLOAD done bytes_on_disk=\(onDisk) downloaded=\(onDisk - before) seconds=\(seconds)")
                 if loadAfterDownload {
-                    await loadPipeline(at: ModelFiles.root, name: ModelFiles.title, afterDownload: true)
+                    await loadPipeline(at: model.root, name: model.title, afterDownload: true)
                 } else {
                     setStatus(.idle)
                 }
@@ -361,6 +404,16 @@ final class DiffusionEngine: ObservableObject {
         image = nil
         imageCaption = ""
         notice = nil
+    }
+
+    /// Lets go of the loaded model, so Generate waits for the next Download & Load or Local….
+    private func unload() {
+        guard !status.isBusy else { return }
+        pipeline = nil
+        modelName = nil
+        modelFolder = nil
+        notice = nil
+        setStatus(.idle)
     }
 
     private func showDownload(_ bytes: Int64) {
