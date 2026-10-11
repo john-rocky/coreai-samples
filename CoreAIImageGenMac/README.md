@@ -89,7 +89,7 @@ local copy of the repo, the same files, because the download was still running.
 
 | What | bf16 DiT | int8 DiT |
 |---|---|---|
-| Download, 31 files, over Wi-Fi (802.11ax) | not finished: 3.05 of 32.42 GB in 1,360 s (2.2 MB/s) ¹ | not measured ² |
+| Download, 31 files, over Wi-Fi (802.11ax) | 32,421,549,961 bytes in three passes; the last pass 29.37 GB in 2,631 s (11.2 MB/s) ¹ | not measured ² |
 | First load: Core AI compiles the five graphs for this Mac | 82.5 s | 23.3 s ³ |
 | The cache that leaves in `~/Library/Caches/coreai-cache/` | 46.7 GB | 25.8 GB ⁴ |
 | Load after a relaunch | 6.0–23.1 s ⁵ | 5.0 s |
@@ -98,9 +98,11 @@ local copy of the repo, the same files, because the download was still running.
 | Peak memory (physical footprint), 1024×1024 | 18.9 GiB (19,397 MiB) | 20.1 GiB (20,546 MiB) |
 | Peak memory (physical footprint), 512×512 | 13.9 GiB (14,275 MiB) | not measured |
 
-¹ The download was still running when this was written; the full figure follows. It was paused for the timed launches,
-then lost its connection 798 MB into the 15.1 GB text encoder file, and `HubApi` starts an interrupted file over.
-curl, run alongside the app, got 1.3 MB/s from the same host.
+¹ 2026-10-11 22:36 to 2026-10-12 01:04 with pauses. The first pass took 25 files (3.05 GB) in 1,360 s at 2.2 MB/s and
+was stopped for the timed launches; the second lost its connection 798 MB into the 15.1 GB text encoder file; the
+third took the remaining 29.37 GB. `HubApi` starts an interrupted file over. curl, run alongside the first pass,
+got 1.3 MB/s from the same host. After the download, Download & Load reached Ready and the seed-42 1024×1024 image
+had the same bytes as the timed runs.
 ² The int8 entry downloads the int8 DiT (7.56 GB) in place of the bf16 one; that download was not timed.
 ³ After the bf16 entry's first load, so the text encoder and the VAE decoders came from the cache. Compiling the int8
 DiT took 18.9 s of it.
