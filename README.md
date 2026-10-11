@@ -13,7 +13,7 @@ lift it straight into your own app. Models come from Apple's official export rec
 | [CoreAIChatMac](CoreAIChatMac/) | macOS | Chat with any exported LLM bundle — streaming, live load/TTFT/tok-s stats, gpt-oss "thinking" parsing |
 | [CoreAIDecisionFormMac](CoreAIDecisionFormMac/) | macOS | Copy an email → a support ticket form fills at once: eight typed decisions (choice / score / yes-no) from one read of the email, clef-flash 9B |
 | [CoreAISearchiOS](CoreAISearchiOS/) | iOS | Search your notes by meaning — Granite-Embedding-97M, 9,859-sentence example library + your own text |
-| [CoreAIImageGenMac](CoreAIImageGenMac/) | macOS | Type a prompt → a 1024×1024 image; FLUX.2 klein 4B on the official diffusion pipeline |
+| [CoreAIImageGenMac](CoreAIImageGenMac/) | macOS | Type a prompt → a 1024×1024 image (FLUX.2 klein 4B) or an RGBA sticker with a real alpha (RGBA-Image-2.1-Turbo); the two models share one picker |
 | CLIPPhotoSearch | iOS | *(design stage — [memo](CLIPPhotoSearch-DESIGN.md))* on-device photo semantic search on the ANE |
 
 Measured performance for everything here:
@@ -50,10 +50,12 @@ The [community zoo](https://github.com/john-rocky/coreai-model-zoo)'s bundles
 just work, with in-app Hugging Face downloads. This repo stays plain-official so
 the code stays copy-paste-able into your app.
 
-Two zoo models are the exception, because they run on the unmodified runtime with no
+Three zoo models are the exception, because they run on the unmodified runtime with no
 engine patch, so their apps live here: clef-flash (its zoo host `ClefFlash`, vendored in
-[CoreAIDecisionFormMac](CoreAIDecisionFormMac/)) and Granite-Embedding-97M (a plain
-`.aimodel` called through `AIModel.run` in [CoreAISearchiOS](CoreAISearchiOS/)).
+[CoreAIDecisionFormMac](CoreAIDecisionFormMac/)), Granite-Embedding-97M (a plain
+`.aimodel` called through `AIModel.run` in [CoreAISearchiOS](CoreAISearchiOS/)) and
+RGBA-Image-2.1-Turbo (five `.aimodel` graphs run one by one through `AIModel` in
+[CoreAIImageGenMac](CoreAIImageGenMac/)).
 
 ## License
 

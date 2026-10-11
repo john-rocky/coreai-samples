@@ -60,30 +60,55 @@ struct ContentView: View {
     /// Where the model comes from: the Hugging Face folder, or the folder picked with Local….
     private var modelSource: String {
         let model = engine.selected
+        let source: String
         if let folder = engine.modelFolder, folder.standardizedFileURL != model.root.standardizedFileURL {
-            return "Folder: \(folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))"
+            source = "Folder: \(folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))"
+        } else {
+            let place = model.folder.isEmpty ? model.repo : "\(model.repo)/\(model.folder)"
+            source = "Hugging Face: \(place), \(gigabytes(model.totalBytes)) GB"
         }
-        return "Hugging Face: \(model.repo)/\(model.folder), \(gigabytes(model.totalBytes)) GB"
+        return model.licenceNote.map { "\(source)\n\($0)" } ?? source
     }
 
-    private var promptField: some View {
+    @ViewBuilder private var promptField: some View {
         TextField("Describe the image you want", text: $engine.prompt, axis: .vertical)
             .lineLimit(3...8)
             .onSubmit { engine.generate() }
+        if let note = engine.selected.promptNote {
+            Text(note)
+                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder private var settingsControls: some View {
-        Stepper("Steps: \(engine.steps)", value: $engine.steps, in: 1...50)
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Guidance")
-                Spacer()
-                Text(String(format: "%.1f", engine.guidance)).monospacedDigit().foregroundStyle(.secondary)
+        let model = engine.selected
+        if let steps = model.fixedSteps {
+            Text("Steps: \(steps), fixed by the model")
+        } else {
+            Stepper("Steps: \(engine.steps)", value: $engine.steps, in: 1...50)
+        }
+        if model.usesGuidance {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Guidance")
+                    Spacer()
+                    Text(String(format: "%.1f", engine.guidance)).monospacedDigit().foregroundStyle(.secondary)
+                }
+                Slider(value: $engine.guidance, in: 1...10, step: 0.5)
+                Text("1.0: one pass per step (the model is guidance-distilled). Above 1.0: two passes per step.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Slider(value: $engine.guidance, in: 1...10, step: 0.5)
-            Text("1.0: one pass per step (the model is guidance-distilled). Above 1.0: two passes per step.")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        }
+        if !model.sizes.isEmpty {
+            Picker("Size", selection: $engine.size) {
+                ForEach(model.sizes, id: \.self) { size in
+                    Text(verbatim: "\(size)").tag(size)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(engine.status.isBusy)
         }
         HStack {
             Text("Seed")
@@ -105,9 +130,14 @@ struct ContentView: View {
             }
             HStack(alignment: .top, spacing: 8) {
                 if engine.status.isBusy { ProgressView().controlSize(.small) }
-                Text(statusText)
-                    .font(.caption).foregroundStyle(statusColor)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusText)
+                        .font(.caption).foregroundStyle(statusColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if engine.status == .loading, let detail = engine.loadDetail {
+                        Text(detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 Spacer(minLength: 0)
             }
         }
@@ -163,6 +193,8 @@ struct ContentView: View {
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
+                    // A transparent image sits on a checkerboard, so its alpha shows.
+                    .background { if engine.imageHasAlpha { Checkerboard() } }
                     .padding(12)
             } else {
                 placeholder
@@ -232,12 +264,30 @@ struct ContentView: View {
         guard let image = engine.image else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "flux2-klein-seed\(engine.lastSeed).png"
+        // The PNG keeps the alpha channel of an RGBA image.
+        let stem = engine.imageHasAlpha ? "rgba-image-turbo" : "flux2-klein"
+        panel.nameFieldStringValue = "\(stem)-seed\(engine.lastSeed).png"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try PNG.write(image, to: url)
         } catch {
             engine.show(notice: "Could not save the image: \(error.localizedDescription)")
+        }
+    }
+}
+
+/// 16 pt squares in two greys, the usual backdrop for a transparent image.
+struct Checkerboard: View {
+    var body: some View {
+        Canvas { context, size in
+            let side: CGFloat = 16
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(white: 0.80)))
+            for row in 0..<Int((size.height / side).rounded(.up)) {
+                for column in 0..<Int((size.width / side).rounded(.up)) where (row + column).isMultiple(of: 2) {
+                    context.fill(Path(CGRect(x: CGFloat(column) * side, y: CGFloat(row) * side, width: side, height: side)),
+                                 with: .color(Color(white: 0.60)))
+                }
+            }
         }
     }
 }

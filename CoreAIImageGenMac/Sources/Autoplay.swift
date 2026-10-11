@@ -10,15 +10,32 @@ import Foundation
 ///
 /// - `-autoplay 1`: press Download & Load (once more if the download fails), wait until the model is
 ///   ready, then generate.
-/// - `-model fp16|int8`: pick that model before Download & Load (default: the first one).
+/// - `-model fp16|int8|rgba-turbo-bf16|rgba-turbo-int8`: pick that model before Download & Load
+///   (default: the first one).
 /// - `-hubEndpoint <url>`: download from this host instead of https://huggingface.co.
+/// - `-hubEndpointFirstTry <url>`: the first press of Download & Load goes to this host instead, the next one
+///   to `-hubEndpoint` or Hugging Face (a closed port such as http://127.0.0.1:9 shows the failure and the retry).
+/// - `-freeBytes <n>`: Download & Load acts as if the disk had n bytes free (shows the not-enough-space message).
 /// - `-local <folder>`: press Local… with this folder instead of Download & Load.
+/// - `-aot <folder>`: RGBA-Image-2.1-Turbo opens its graphs compiled ahead of time (`<name>.<arch>.aimodelc`)
+///   from this folder, and compiles any missing one into it with `xcrun coreai-build` first (checks against
+///   the Python engine, which runs that form). Without it, a graph comes from the bundle's own aot/ folder
+///   when it is there, and otherwise Core AI compiles its `.aimodel` just in time.
 /// - `-downloadOnly 1`: stop after the download, before the load.
 /// - `-prompt "<text>"` or `-prompts <file, one prompt per line>`: type each prompt, press Generate.
-/// - `-steps <n>`, `-guidance <x>`, `-seed <text>`: set the fields before Generate.
+/// - `-type 1` (recording): type each prompt into the Prompt field one character at a time, `-typeMs <ms>`
+///   apart (default 35), instead of filling it in at once.
+/// - `-trigger <file>` (recording): once the model is ready and the fields are set, wait until this file
+///   exists before typing the first prompt (a recorder creates it once the capture is rolling).
+/// - `-steps <n>`, `-guidance <x>`, `-seed <text>`, `-size 256|512|1024`: set the fields before Generate.
+/// - `-noiseFile <file>`: RGBA-Image-2.1-Turbo starts from this noise instead of the seed's: float32,
+///   channel-major [1, 1, 64, size/16, size/16], e.g. `torch.randn(...).numpy().tofile(file)`.
 /// - `-stopAfterStep <n>`: press Stop once step n has finished.
 /// - `-out <file.png>`: write each image there (`-2`, `-3`… before the extension for later prompts).
+///   An RGBA image also gets `<name>_rgb.png` (over white) and `<name>_final_latents.f32` (the last
+///   latent, [1, N, 64] float32).
 /// - `-hold <s>`: wait this long before each press and after each image (default 2).
+/// - `-holdAfter <s>`: wait this long after each image instead (default: the `-hold` value).
 /// - `-log 1`: mirror the status lines to ~/Library/Application Support/CoreAIImageGenMac/autoplay.log;
 ///   at the end write result-<launch epoch>.json there with every measured number of the run.
 /// - `-quit 1`: quit when the run is done.
@@ -31,16 +48,25 @@ enum LaunchOptions {
     static var log: Bool { defaults.bool(forKey: "log") }
     static var model: String? { defaults.string(forKey: "model") }
     static var hubEndpoint: String? { defaults.string(forKey: "hubEndpoint") }
+    static var hubEndpointFirstTry: String? { defaults.string(forKey: "hubEndpointFirstTry") }
+    static var freeBytes: Int64? { defaults.string(forKey: "freeBytes").flatMap { Int64($0) } }
     static var local: String? { defaults.string(forKey: "local") }
+    static var aot: String? { defaults.string(forKey: "aot") }
     static var downloadOnly: Bool { defaults.bool(forKey: "downloadOnly") }
     static var prompt: String? { defaults.string(forKey: "prompt") }
     static var prompts: String? { defaults.string(forKey: "prompts") }
+    static var type: Bool { defaults.bool(forKey: "type") }
+    static var typeMs: Double { defaults.object(forKey: "typeMs") == nil ? 35 : defaults.double(forKey: "typeMs") }
+    static var trigger: String? { defaults.string(forKey: "trigger") }
     static var steps: Int? { defaults.object(forKey: "steps") == nil ? nil : defaults.integer(forKey: "steps") }
     static var guidance: Float? { defaults.object(forKey: "guidance") == nil ? nil : defaults.float(forKey: "guidance") }
     static var seed: String? { defaults.string(forKey: "seed") }
+    static var size: Int? { defaults.object(forKey: "size") == nil ? nil : defaults.integer(forKey: "size") }
+    static var noiseFile: String? { defaults.string(forKey: "noiseFile") }
     static var stopAfterStep: Int? { defaults.object(forKey: "stopAfterStep") == nil ? nil : defaults.integer(forKey: "stopAfterStep") }
     static var out: String? { defaults.string(forKey: "out") }
     static var hold: Double { defaults.object(forKey: "hold") == nil ? 2 : defaults.double(forKey: "hold") }
+    static var holdAfter: Double { defaults.object(forKey: "holdAfter") == nil ? hold : defaults.double(forKey: "holdAfter") }
     static var quit: Bool { defaults.bool(forKey: "quit") }
 }
 
@@ -79,6 +105,13 @@ struct RunReport: Codable {
         var revision: String
         var folder: String
     }
+    /// The free-space check before a download.
+    struct Disk: Codable {
+        var free_bytes: Int64?
+        var needed_bytes: Int64
+        var files_bytes: Int64
+        var cache_bytes: Int64
+    }
     struct Download: Codable {
         var seconds: Double
         var bytes_downloaded: Int64
@@ -94,6 +127,20 @@ struct RunReport: Codable {
         var mode: String
         var image_size: String
         var after_download: Bool
+        /// RGBA-Image-2.1-Turbo: each graph's file, options and seconds.
+        var bundles: [BundleLoad]? = nil
+        var drop_idx: Int? = nil
+    }
+    struct BundleLoad: Codable {
+        var name: String
+        /// The `.aimodel` (compiled just in time) or `.aimodelc` (compiled ahead of time) that was opened.
+        var file: String
+        /// "gpu-efr" (an `.aimodel`: GPU preferred and expectFrequentReshapes), or for an `.aimodelc`
+        /// "default" (`SpecializationOptions.default`) or "gpu" (preferring the GPU, tried when default failed).
+        var options: String
+        var load_seconds: Double
+        /// Set when the app compiled it during this load.
+        var compile_seconds: Double?
     }
     struct Pixels: Codable {
         var sha256: String
@@ -102,6 +149,34 @@ struct RunReport: Codable {
         var max: Int
         var fraction_0: Double
         var fraction_255: Double
+        /// RGBA images: the alpha channel's statistics.
+        var alpha: Alpha? = nil
+    }
+    struct Alpha: Codable {
+        var min: Int
+        var max: Int
+        var mean: Double
+        var fraction_0: Double
+        var fraction_255: Double
+    }
+    /// What an engine that runs the graphs itself (RGBA-Image-2.1-Turbo) reports about one image.
+    struct GenerationDetails: Codable {
+        var size: Int?
+        /// "seed N (TorchRandomSource)" or the noise file.
+        var noise: String?
+        var token_ids: [Int]?
+        var drop_idx: Int?
+        /// L, the prompt tokens the DiT reads.
+        var text_tokens: Int?
+        var tokenize_seconds: Double?
+        var encode_seconds: Double?
+        /// Each DiT step on its own (the call and the Euler update).
+        var dit_step_seconds: [Double]?
+        var decode_seconds: Double?
+        /// NaN values in the encoder rows, the DiT outputs and the decoder output together.
+        var nan_values: Int?
+        /// The compiled graphs that ran.
+        var graphs: [String]?
     }
     struct Generation: Codable {
         var prompt: String
@@ -120,6 +195,11 @@ struct RunReport: Codable {
         var png_bytes: Int?
         var png_sha256: String?
         var pixels: Pixels?
+        /// RGBA images: the copy over white and the final latent written next to the PNG.
+        var rgb_png_path: String?
+        var latents_path: String?
+        var latents_sha256: String?
+        var details: GenerationDetails?
     }
 
     var status = "RUNNING"
@@ -130,7 +210,8 @@ struct RunReport: Codable {
     var architecture = AIModel.deviceArchitectureName
     var physical_memory_gb = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
     var hub: Hub?
-    var compute = "Core AI, GPU preferred (the pipeline's SpecializationOptions); per-operation placement not observed"
+    var disk: Disk?
+    var compute = "Core AI: FLUX through the pipeline's SpecializationOptions (GPU preferred); RGBA-Image-2.1-Turbo with the options in loads[].bundles; per-operation placement not observed"
     var arguments = Array(ProcessInfo.processInfo.arguments.dropFirst())
     var thermal_at_launch = RunReport.thermal()
     var thermal_at_end: String?
@@ -197,8 +278,27 @@ struct RunReport: Codable {
         }
         let samples = Double(width * height * 3)
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        var alpha: Alpha?
+        if channels == 4, image.alphaInfo == .last {
+            var aLow = 255, aHigh = 0, aZeros = 0, aFull = 0, aSum = 0.0
+            data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+                for y in 0..<height {
+                    for x in 0..<width {
+                        let value = Int(raw[y * rowBytes + x * channels + 3])
+                        aSum += Double(value)
+                        aLow = Swift.min(aLow, value)
+                        aHigh = Swift.max(aHigh, value)
+                        if value == 0 { aZeros += 1 }
+                        if value == 255 { aFull += 1 }
+                    }
+                }
+            }
+            let count = Double(width * height)
+            alpha = Alpha(min: aLow, max: aHigh, mean: aSum / count, fraction_0: Double(aZeros) / count,
+                          fraction_255: Double(aFull) / count)
+        }
         return Pixels(sha256: digest, mean_rgb: sums.map { $0 / Double(width * height) }, min: low, max: high,
-                      fraction_0: Double(zeros) / samples, fraction_255: Double(full) / samples)
+                      fraction_0: Double(zeros) / samples, fraction_255: Double(full) / samples, alpha: alpha)
     }
 }
 
@@ -248,11 +348,26 @@ enum Autoplay {
 
             for (index, text) in try promptList().enumerated() {
                 try await pause()
-                engine.prompt = text
                 if let steps = LaunchOptions.steps { engine.steps = steps }
                 if let guidance = LaunchOptions.guidance { engine.guidance = guidance }
                 if let seed = LaunchOptions.seed { engine.seedText = seed }
-                Telemetry.line("TYPED prompt=\(text) steps=\(engine.steps) guidance=\(engine.guidance) seed=\(engine.seedText)")
+                if let size = LaunchOptions.size { engine.size = size }
+                if let path = LaunchOptions.noiseFile {
+                    let url = URL(filePath: (path as NSString).expandingTildeInPath)
+                    engine.noiseOverride = (try Float32File.read(url, count: 64 * (engine.size / 16) * (engine.size / 16)), url.path)
+                }
+                if index == 0, let trigger = LaunchOptions.trigger {
+                    let path = (trigger as NSString).expandingTildeInPath
+                    Telemetry.line("WAIT trigger=\(path)")
+                    try await until("the trigger file", timeout: 3600) { FileManager.default.fileExists(atPath: path) }
+                }
+                if LaunchOptions.type {
+                    Telemetry.line("TYPING characters=\(text.count) ms_each=\(LaunchOptions.typeMs)")
+                    try await typeCharacters(text, into: engine)
+                } else {
+                    engine.prompt = text
+                }
+                Telemetry.line("TYPED prompt=\(text) steps=\(engine.steps) guidance=\(engine.guidance) seed=\(engine.seedText) size=\(engine.size)")
                 try await pause()
                 Telemetry.line("TAP Generate")
                 let before = engine.report.generations.count
@@ -274,9 +389,10 @@ enum Autoplay {
                 guard engine.report.generations.count > before else { continue }
                 let last = engine.report.generations.count - 1
                 if engine.report.generations[last].width != nil, let image = engine.image {
-                    record(image, index: index, into: &engine.report.generations[last])
+                    record(image, hasAlpha: engine.imageHasAlpha, latents: engine.lastLatents, index: index,
+                           into: &engine.report.generations[last])
                 }
-                try await pause()
+                try await Task.sleep(for: .seconds(LaunchOptions.holdAfter))
             }
         } catch {
             Telemetry.line("ERROR \(error)")
@@ -293,7 +409,8 @@ enum Autoplay {
     }
 
     /// Writes the image to `-out` and adds its size, hashes and pixel statistics to the record.
-    private static func record(_ image: CGImage, index: Int, into generation: inout RunReport.Generation) {
+    private static func record(_ image: CGImage, hasAlpha: Bool, latents: [Float]?, index: Int,
+                               into generation: inout RunReport.Generation) {
         generation.pixels = RunReport.pixels(of: image)
         if let out = LaunchOptions.out {
             var url = URL(filePath: (out as NSString).expandingTildeInPath)
@@ -307,11 +424,34 @@ enum Autoplay {
                 generation.png_path = url.path
                 generation.png_bytes = data.count
                 generation.png_sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                if hasAlpha {
+                    let stem = url.deletingPathExtension().lastPathComponent, folder = url.deletingLastPathComponent()
+                    let rgb = folder.appending(path: "\(stem)_rgb.png")
+                    try PNG.write(try RGBA8.overWhite(image), to: rgb)
+                    generation.rgb_png_path = rgb.path
+                    if let latents {
+                        let file = folder.appending(path: "\(stem)_final_latents.f32")
+                        let bytes = latents.withUnsafeBufferPointer { Data(buffer: $0) }
+                        try bytes.write(to: file)
+                        generation.latents_path = file.path
+                        generation.latents_sha256 = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+                    }
+                }
             } catch {
                 Telemetry.line("ERROR writing \(url.path): \(error)")
             }
         }
-        Telemetry.line("IMAGE \(image.width)x\(image.height) seconds=\(generation.seconds) png=\(generation.png_path ?? "not written") png_sha256=\(generation.png_sha256 ?? "-") pixels_sha256=\(generation.pixels?.sha256 ?? "-") min=\(generation.pixels?.min ?? -1) max=\(generation.pixels?.max ?? -1)")
+        Telemetry.line("IMAGE \(image.width)x\(image.height) seconds=\(generation.seconds) png=\(generation.png_path ?? "not written") png_sha256=\(generation.png_sha256 ?? "-") pixels_sha256=\(generation.pixels?.sha256 ?? "-") min=\(generation.pixels?.min ?? -1) max=\(generation.pixels?.max ?? -1) alpha_min=\(generation.pixels?.alpha?.min ?? -1) alpha_mean=\(generation.pixels?.alpha?.mean ?? -1)")
+    }
+
+    /// Types `text` into the Prompt field one character at a time, `-typeMs` apart.
+    private static func typeCharacters(_ text: String, into engine: DiffusionEngine) async throws {
+        engine.prompt = ""
+        let start = ContinuousClock.now
+        for (offset, character) in text.enumerated() {
+            try await Task.sleep(until: start + .milliseconds(LaunchOptions.typeMs * Double(offset)), clock: .continuous)
+            engine.prompt.append(character)
+        }
     }
 
     private static func pause() async throws {

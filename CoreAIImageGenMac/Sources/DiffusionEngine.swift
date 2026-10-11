@@ -1,120 +1,12 @@
-// DiffusionEngine — downloads a FLUX.2 klein 4B Core AI bundle from the Hugging Face Hub, loads
-// it with Apple's official CoreAIDiffusionPipeline (`FlowTransformerPipeline`) and turns a prompt
-// into an image. Every button in ContentView calls a method here; the hands-off runs in
+// DiffusionEngine — the app's state: which model is picked, its download and load, and Generate /
+// Stop. The work itself goes to the picked model's ImageModelEngine (FluxEngine or
+// RGBAImageTurboEngine). Every button in ContentView calls a method here; the hands-off runs in
 // Autoplay.swift call the same methods.
 
-import CoreAIDiffusionPipeline
 import CoreGraphics
 import Foundation
-import Hub
 import ImageIO
 import UniformTypeIdentifiers
-
-/// One bundle this app can download: a folder of a Hugging Face repo, pinned to one revision.
-struct ModelFiles: Identifiable {
-    /// Short name, also the value of `-model` in hands-off runs.
-    let id: String
-    let title: String
-    let repo: String
-    let revision: String
-    /// The folder of the repo that holds the bundle.
-    let folder: String
-    /// What text-to-image at 1024×1024 needs, with each file's size at `revision`, in download
-    /// order. The folder's VAE encoders (image-to-image) and half-size VAEs are left out.
-    let files: [(path: String, bytes: Int64)]
-
-    var totalBytes: Int64 { files.reduce(0) { $0 + $1.bytes } }
-
-    /// The files can be downloaded again, so they live in Caches.
-    static let downloadBase = URL.cachesDirectory.appending(path: "CoreAIImageGenMac/huggingface")
-    /// The bundle folder on disk, the one the pipeline opens.
-    var root: URL {
-        HubApi(downloadBase: Self.downloadBase).localRepoLocation(HubApi.Repo(id: repo)).appending(path: folder)
-    }
-
-    var isOnDisk: Bool { files.allSatisfy { size(of: $0.path) == $0.bytes } }
-    var bytesOnDisk: Int64 { files.reduce(0) { $0 + min(size(of: $1.path) ?? 0, $1.bytes) } }
-
-    private func size(of path: String) -> Int64? {
-        (try? FileManager.default.attributesOfItem(atPath: root.appending(path: path).path)[.size] as? NSNumber)?.int64Value
-    }
-
-    /// Downloads the files that are not on disk yet with swift-transformers' `HubApi`, one file at
-    /// a time, so a failed download keeps the files that finished and the next try fetches only
-    /// the rest. `endpoint` replaces https://huggingface.co (nil = the default). `progress` gets
-    /// the bytes done so far.
-    func download(endpoint: String?, progress: @escaping @Sendable (Int64) -> Void) async throws {
-        // cache: nil = one copy of each file, in downloadBase (no second copy in the Hub cache).
-        // useOfflineMode: false = no network gives the network's own error, not a missing-file one.
-        let hub = HubApi(downloadBase: Self.downloadBase, cache: nil, endpoint: endpoint, useOfflineMode: false)
-        var done: Int64 = 0
-        for file in files {
-            if size(of: file.path) != file.bytes {
-                let before = done
-                try await hub.snapshot(from: HubApi.Repo(id: repo), revision: revision, matching: ["\(folder)/\(file.path)"]) { @Sendable fraction in
-                    progress(before + Int64(fraction.fractionCompleted * Double(file.bytes)))
-                }
-                try Task.checkCancellation()
-                guard size(of: file.path) == file.bytes else {
-                    throw ImageGenError("\(file.path) did not download completely.")
-                }
-            }
-            done += file.bytes
-            progress(done)
-        }
-    }
-}
-
-extension ModelFiles {
-    /// The two folders of mlboydaisuke/FLUX.2-klein-4B-CoreAI, both exported with the
-    /// apple/coreai-models commit that project.yml pins. The first is the default.
-    static let catalog: [ModelFiles] = [
-        ModelFiles(
-            id: "fp16", title: "FLUX.2 klein 4B (fp16, 14.1 GB)",
-            repo: "mlboydaisuke/FLUX.2-klein-4B-CoreAI",
-            revision: "039db98cbf1247680ea5e76048f87b3ce061e6d6", folder: "macos-fp16",
-            files: [
-                ("metadata.json", 974),
-                ("tokenizer/chat_template.jinja", 4_168),
-                ("tokenizer/config.json", 375),
-                ("tokenizer/tokenizer.json", 11_422_650),
-                ("tokenizer/tokenizer_config.json", 375),
-                ("vae_bn_mean.npy", 640),
-                ("vae_bn_var.npy", 640),
-                ("VAEDecoder.aimodel/main.hash", 32),
-                ("VAEDecoder.aimodel/metadata.json", 395),
-                ("VAEDecoder.aimodel/main.mlirb", 99_294_680),
-                ("TextEncoder.aimodel/main.hash", 32),
-                ("TextEncoder.aimodel/metadata.json", 396),
-                ("TextEncoder.aimodel/main.mlirb", 6_228_947_553),
-                ("Transformer.aimodel/main.hash", 32),
-                ("Transformer.aimodel/metadata.json", 396),
-                ("Transformer.aimodel/main.mlirb", 7_751_312_967),
-            ]),
-        ModelFiles(
-            id: "int8", title: "FLUX.2 klein 4B (int8, 7.5 GB)",
-            repo: "mlboydaisuke/FLUX.2-klein-4B-CoreAI",
-            revision: "039db98cbf1247680ea5e76048f87b3ce061e6d6", folder: "macos-int8",
-            files: [
-                ("metadata.json", 1_549),
-                ("tokenizer/chat_template.jinja", 4_168),
-                ("tokenizer/config.json", 375),
-                ("tokenizer/tokenizer.json", 11_422_650),
-                ("tokenizer/tokenizer_config.json", 375),
-                ("vae_bn_mean.npy", 640),
-                ("vae_bn_var.npy", 640),
-                ("VAEDecoder.aimodel/main.hash", 32),
-                ("VAEDecoder.aimodel/metadata.json", 395),
-                ("VAEDecoder.aimodel/main.mlirb", 99_294_687),
-                ("TextEncoder.aimodel/main.hash", 32),
-                ("TextEncoder.aimodel/metadata.json", 396),
-                ("TextEncoder.aimodel/main.mlirb", 3_309_658_432),
-                ("Transformer.aimodel/main.hash", 32),
-                ("Transformer.aimodel/metadata.json", 396),
-                ("Transformer.aimodel/main.mlirb", 4_119_647_410),
-            ]),
-    ]
-}
 
 struct ImageGenError: LocalizedError {
     let errorDescription: String?
@@ -130,19 +22,28 @@ enum PNG {
     }
 }
 
-/// Thread-safe flag and step clock, written from the pipeline's progress callback (off the main actor).
+/// Thread-safe flag and step clock, written by the engine during a run (off the main actor).
 final class GenerationProgress: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
     private var stepSeconds: [Double] = []
     private let start = ContinuousClock.now
+    private let onStep: @Sendable (Int, Int) -> Void
+
+    /// `onStep` gets (step, total) after each step.
+    init(onStep: @escaping @Sendable (Int, Int) -> Void) {
+        self.onStep = onStep
+    }
 
     var isCancelled: Bool { lock.withLock { cancelled } }
     func cancel() { lock.withLock { cancelled = true } }
 
     /// Seconds from Generate to the end of each denoising step.
     var steps: [Double] { lock.withLock { stepSeconds } }
-    func stepFinished() { lock.withLock { stepSeconds.append(start.duration(to: .now).seconds) } }
+    func stepFinished(_ step: Int, of total: Int) {
+        lock.withLock { stepSeconds.append(start.duration(to: .now).seconds) }
+        onStep(step, total)
+    }
     var elapsed: Double { start.duration(to: .now).seconds }
 }
 
@@ -184,14 +85,22 @@ final class DiffusionEngine: ObservableObject {
     @Published private(set) var status: Status = .idle
     /// The bundle Download & Load fetches. Picking another one drops the loaded model.
     @Published var selectedID = ModelFiles.catalog[0].id {
-        didSet { if selectedID != oldValue { unload() } }
+        didSet {
+            guard selectedID != oldValue else { return }
+            unload()
+            if let size = selected.defaultSize { self.size = size }
+        }
     }
     var selected: ModelFiles { ModelFiles.catalog.first { $0.id == selectedID } ?? ModelFiles.catalog[0] }
     /// What is loaded: the model's title, or the folder name for Local….
     @Published private(set) var modelName: String?
     /// The bundle folder that is loaded.
     @Published private(set) var modelFolder: URL?
+    /// The step of a load in progress that takes long (compiling for this Mac, opening a graph).
+    @Published private(set) var loadDetail: String?
     @Published private(set) var image: CGImage?
+    /// True when `image` has a real alpha channel: it is shown over a checkerboard and saved with it.
+    @Published private(set) var imageHasAlpha = false
     @Published private(set) var imageCaption = ""
     /// A sentence about the last press of Generate that did not give an image.
     @Published private(set) var notice: String?
@@ -200,15 +109,22 @@ final class DiffusionEngine: ObservableObject {
     @Published var prompt = "" { didSet { notice = nil } }
     @Published var steps = 4
     @Published var guidance: Float = 1.0
+    /// The square size of the next image, for models with a Size picker.
+    @Published var size = 1024
     @Published var seedText = "42" { didSet { notice = nil } }
 
     /// Every measured number of this launch; Autoplay writes it out as JSON.
     var report = RunReport()
     private(set) var lastSeed: UInt32 = 0
+    /// Hands-off checks only: the starting noise of the next images, read from a file (`-noiseFile`).
+    var noiseOverride: (values: [Float], source: String)?
+    /// The last image's final latent (hands-off runs write it next to the PNG).
+    private(set) var lastLatents: [Float]?
 
-    private var pipeline: FlowTransformerPipeline?
+    private var engine: (any ImageModelEngine)?
     private var work: Task<Void, Never>?
-    private var progress = GenerationProgress()
+    /// Presses of Download & Load in this launch that went to the network.
+    private var downloadTries = 0
 
     // MARK: - Download and load
 
@@ -224,8 +140,20 @@ final class DiffusionEngine: ObservableObject {
             if loadAfterDownload { startLoad(model.root, name: model.title) }
             return
         }
-        let endpoint = LaunchOptions.hubEndpoint
+        downloadTries += 1
+        let endpoint = (downloadTries == 1 ? LaunchOptions.hubEndpointFirstTry : nil) ?? LaunchOptions.hubEndpoint
         let before = model.bytesOnDisk
+        // The files and the cache Core AI writes on the first load both need room: say so before the
+        // download starts instead of failing partway through it.
+        let files = model.totalBytes - before, needed = files + model.firstLoadCacheBytes
+        let free = LaunchOptions.freeBytes ?? Self.freeDiskBytes()
+        report.disk = .init(free_bytes: free, needed_bytes: needed, files_bytes: files, cache_bytes: model.firstLoadCacheBytes)
+        Telemetry.line("DISK free=\(free.map(String.init) ?? "unknown") needed=\(needed) files=\(files) cache=\(model.firstLoadCacheBytes)")
+        if let free, free < needed {
+            report.download_errors.append("free disk \(free) bytes < needed \(needed) bytes")
+            setStatus(.failed("Not enough free disk space. Download & Load needs \(Self.gigabytes(needed)) GB: \(Self.gigabytes(files)) GB of files, and \(Self.gigabytes(model.firstLoadCacheBytes)) GB that Core AI writes to its cache on the first load. \(Self.gigabytes(free)) GB is free."))
+            return
+        }
         let start = ContinuousClock.now
         setStatus(.downloading(done: before, total: model.totalBytes))
         Telemetry.line("DOWNLOAD start model=\(model.id) repo=\(model.repo) revision=\(model.revision) folder=\(model.folder) endpoint=\(endpoint ?? "default") on_disk=\(before) total=\(model.totalBytes)")
@@ -242,7 +170,7 @@ final class DiffusionEngine: ObservableObject {
                                         expected_bytes: model.totalBytes, endpoint: endpoint ?? "default")
                 Telemetry.line("DOWNLOAD done bytes_on_disk=\(onDisk) downloaded=\(onDisk - before) seconds=\(seconds)")
                 if loadAfterDownload {
-                    await loadPipeline(at: model.root, name: model.title, afterDownload: true)
+                    await loadModel(at: model.root, name: model.title, afterDownload: true)
                 } else {
                     setStatus(.idle)
                 }
@@ -256,7 +184,8 @@ final class DiffusionEngine: ObservableObject {
         }
     }
 
-    /// The Local… button: a bundle folder exported with `coreai.diffusion.export`.
+    /// The Local… button: a bundle folder of the picked model (for FLUX, one exported with
+    /// `coreai.diffusion.export`).
     func loadLocal(_ url: URL) {
         guard !status.isBusy else { return }
         clearResult()
@@ -269,42 +198,39 @@ final class DiffusionEngine: ObservableObject {
         work = Task {
             let activity = Self.beginWork("Loading the model")
             defer { ProcessInfo.processInfo.endActivity(activity) }
-            await loadPipeline(at: url, name: name, afterDownload: false)
+            await loadModel(at: url, name: name, afterDownload: false)
         }
     }
 
-    private func loadPipeline(at url: URL, name: String, afterDownload: Bool) async {
-        pipeline = nil
+    private func loadModel(at url: URL, name: String, afterDownload: Bool) async {
+        engine = nil
         modelName = nil
         modelFolder = nil
+        loadDetail = nil
         if status != .loading { setStatus(.loading) }
         Telemetry.line("LOAD start folder=\(url.path)")
-        // The most common wrong pick gets a sentence of its own instead of the runtime's error.
-        guard FileManager.default.fileExists(atPath: url.appending(path: "metadata.json").path) else {
-            report.load_errors.append("no metadata.json in \(url.path)")
-            setStatus(.failed("“\(url.lastPathComponent)” is not a Core AI diffusion bundle: it has no metadata.json. Choose the folder that holds metadata.json, tokenizer/ and the .aimodel folders."))
-            return
-        }
-        let start = ContinuousClock.now
+        let model = selected
+        let next = model.makeEngine()
+        let aot = LaunchOptions.aot.map { URL(filePath: ($0 as NSString).expandingTildeInPath) }
         do {
-            // Reads metadata.json and the tokenizer and picks the components for the best
-            // resolution the folder has (1024×1024 when Transformer and VAEDecoder are there).
-            let built = try await FlowTransformerPipeline(from: url, mode: .auto)
-            let initSeconds = start.duration(to: .now).seconds
-            // Loads every model text-to-image runs. On the first launch Core AI also specializes
-            // each one for this Mac and caches the result; later launches read the cache.
-            try await built.loadResources()
-            let seconds = start.duration(to: .now).seconds
-            let size = built.defaultImageSize
-            pipeline = built
+            var load = try await next.load(files: url, aot: aot) { line in
+                Telemetry.line("LOAD \(line)")
+                Task { @MainActor in self.showLoad(line) }
+            }
+            load.after_download = afterDownload
+            engine = next
             modelName = name
             modelFolder = url
-            report.loads.append(.init(folder: url.path, init_seconds: initSeconds, load_resources_seconds: seconds - initSeconds,
-                                      total_seconds: seconds, mode: built.mode.description,
-                                      image_size: "\(size.width)x\(size.height)", after_download: afterDownload))
-            Telemetry.line("LOAD done seconds=\(seconds) init_s=\(initSeconds) resources_s=\(seconds - initSeconds) mode=\(built.mode) size=\(size.width)x\(size.height) after_download=\(afterDownload)")
+            loadDetail = nil
+            report.loads.append(load)
+            Telemetry.line("LOAD done seconds=\(load.total_seconds) init_s=\(load.init_seconds) resources_s=\(load.load_resources_seconds) mode=\(load.mode) size=\(load.image_size) after_download=\(afterDownload)")
             setStatus(.ready)
+        } catch let wrong as WrongFolder {
+            loadDetail = nil
+            report.load_errors.append(wrong.report)
+            setStatus(.failed(wrong.message))
         } catch {
+            loadDetail = nil
             report.load_errors.append(String(describing: error))
             setStatus(.failed("Could not load “\(url.lastPathComponent)”: \(error.localizedDescription)"))
         }
@@ -314,61 +240,54 @@ final class DiffusionEngine: ObservableObject {
 
     /// The Generate button.
     func generate() {
-        guard case .ready = status, let pipeline else { return }
+        guard case .ready = status, let engine else { return }
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return show(notice: "Type a prompt first, then press Generate.") }
         guard let seed = UInt32(seedText.trimmingCharacters(in: .whitespaces)) else {
             return show(notice: "The seed must be a whole number from 0 to 4294967295.")
         }
-        let steps = self.steps, guidance = self.guidance
+        let model = selected
+        let steps = model.fixedSteps ?? self.steps
+        let guidance = model.usesGuidance ? self.guidance : 1
+        let size = self.size
         notice = nil
         lastSeed = seed
-        let progress = GenerationProgress()
-        self.progress = progress
+        let progress = GenerationProgress { step, total in
+            Task { @MainActor in self.showStep(step, of: total) }
+        }
         setStatus(.generating(step: 0, total: steps))
-        Telemetry.line("GENERATE start steps=\(steps) guidance=\(guidance) seed=\(seed) prompt=\(text)")
-
-        // FLUX.2 klein is guidance-distilled: one pass per step, and the model ignores the
-        // guidance value. Above 1.0 the pipeline adds a second, unconditional pass per step and
-        // mixes the two (classifier-free guidance).
-        let configuration = PipelineConfiguration(
-            prompt: text,
-            seed: seed,
-            stepCount: steps,
-            guidanceScale: guidance,
-            guidanceMode: guidance > 1 ? .manual : .distilled,
-            // Keep the models loaded between images.
-            lazyModelLoading: false)
+        if model.sizes.isEmpty {
+            Telemetry.line("GENERATE start steps=\(steps) guidance=\(guidance) seed=\(seed) prompt=\(text)")
+        } else {
+            Telemetry.line("GENERATE start steps=\(steps) size=\(size) seed=\(seed) noise=\(noiseOverride?.source ?? "seed") prompt=\(text)")
+        }
+        let request = ImageRequest(prompt: text, seed: seed, steps: steps, guidance: guidance, size: size,
+                                   noise: noiseOverride?.values, noiseSource: noiseOverride?.source)
 
         work = Task {
             let activity = Self.beginWork("Generating an image")
             defer { ProcessInfo.processInfo.endActivity(activity) }
             var record = RunReport.Generation(prompt: text, steps: steps, guidance: guidance, seed: seed)
             do {
-                let result = try await pipeline.generateImages(configuration: configuration) { @Sendable update in
-                    progress.stepFinished()
-                    let step = update.step, total = update.totalSteps
-                    Task { @MainActor in self.showStep(step, of: total) }
-                    return !progress.isCancelled
-                }
+                let result = try await engine.generate(request, progress: progress)
                 record.seconds = progress.elapsed
                 record.step_seconds = progress.steps
-                if progress.isCancelled, progress.steps.count < steps {
-                    // The pipeline stops after the step it is on and still decodes; that
-                    // half-finished image is dropped. (Stop during the decode keeps the finished image.)
-                    record.stopped_after_step = progress.steps.count
-                    report.generations.append(record)
-                    show(notice: "Stopped after step \(progress.steps.count) of \(steps). The unfinished image was not kept.")
-                    setStatus(.ready)
-                    return
-                }
-                guard let cgImage = result.images.first else { throw ImageGenError("The pipeline returned no image.") }
-                record.width = cgImage.width
-                record.height = cgImage.height
+                record.width = result.image.width
+                record.height = result.image.height
+                record.details = result.details
                 report.generations.append(record)
-                image = cgImage
-                imageCaption = "\(cgImage.width)×\(cgImage.height) · \(steps) steps · seed \(seed) · \(String(format: "%.1f", record.seconds)) s"
-                Telemetry.line("GENERATE done seconds=\(record.seconds) steps_s=\(record.step_seconds) size=\(cgImage.width)x\(cgImage.height)")
+                image = result.image
+                imageHasAlpha = result.hasAlpha
+                lastLatents = result.finalLatents
+                imageCaption = "\(result.image.width)×\(result.image.height) · \(steps) steps · seed \(seed) · \(String(format: "%.1f", record.seconds)) s"
+                Telemetry.line("GENERATE done seconds=\(record.seconds) steps_s=\(record.step_seconds) size=\(result.image.width)x\(result.image.height)")
+                setStatus(.ready)
+            } catch let stopped as GenerationStopped {
+                record.seconds = progress.elapsed
+                record.step_seconds = progress.steps
+                record.stopped_after_step = stopped.afterStep
+                report.generations.append(record)
+                show(notice: "Stopped after step \(stopped.afterStep) of \(steps). The unfinished image was not kept.")
                 setStatus(.ready)
             } catch {
                 record.error = String(describing: error)
@@ -379,10 +298,10 @@ final class DiffusionEngine: ObservableObject {
         }
     }
 
-    /// The Stop button. The pipeline finishes the step it is on, then returns.
+    /// The Stop button. The engine finishes the step it is on, then returns.
     func stop() {
         guard case .generating = status else { return }
-        progress.cancel()
+        engine?.cancel()
         setStatus(.stopping)
     }
 
@@ -402,6 +321,7 @@ final class DiffusionEngine: ObservableObject {
 
     private func clearResult() {
         image = nil
+        imageHasAlpha = false
         imageCaption = ""
         notice = nil
     }
@@ -409,7 +329,7 @@ final class DiffusionEngine: ObservableObject {
     /// Lets go of the loaded model, so Generate waits for the next Download & Load or Local….
     private func unload() {
         guard !status.isBusy else { return }
-        pipeline = nil
+        engine = nil
         modelName = nil
         modelFolder = nil
         notice = nil
@@ -422,6 +342,29 @@ final class DiffusionEngine: ObservableObject {
             Telemetry.line("DOWNLOAD progress bytes=\(bytes) percent=\(bytes * 100 / max(total, 1))")
         }
         status = .downloading(done: bytes, total: total)
+    }
+
+    /// The engine's load lines that matter to someone waiting: compiling and opening each graph.
+    private func showLoad(_ line: String) {
+        guard status == .loading else { return }
+        let words = line.split(separator: " ")
+        guard let verb = words.first, let count = words.dropFirst().first, count.contains("/") else { return }
+        let ofTotal = count.replacingOccurrences(of: "/", with: " of ")
+        switch verb {
+        case "compile": loadDetail = "Compiling graph \(ofTotal) with Xcode…"
+        case "open": loadDetail = "Opening graph \(ofTotal)…"
+        default: break
+        }
+    }
+
+    /// Free space on the disk that holds ~/Library/Caches, counting what macOS can purge.
+    private static func freeDiskBytes() -> Int64? {
+        try? URL.cachesDirectory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            .volumeAvailableCapacityForImportantUsage
+    }
+
+    static func gigabytes(_ bytes: Int64) -> String {
+        String(format: "%.1f", Double(bytes) / 1e9)
     }
 
     private func showStep(_ step: Int, of total: Int) {

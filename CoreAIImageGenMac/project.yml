@@ -7,7 +7,8 @@ options:
 
 # coreai-models is pinned to the commit this app was built and measured against
 # (apple/coreai-models main on 2026-10-09); its Swift API still changes between commits.
-# Hub = swift-transformers' Hugging Face downloader.
+# Hub = swift-transformers' Hugging Face downloader; Tokenizers = its tokenizer.json reader
+# (RGBA-Image-2.1-Turbo's prompt).
 packages:
   coreai-models:
     url: https://github.com/apple/coreai-models
@@ -37,6 +38,8 @@ targets:
         product: CoreAIDiffusion
       - package: swift-transformers
         product: Hub
+      - package: swift-transformers
+        product: Tokenizers
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.coreai.imagegenmac
